@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EventSync — Real-Time Event Engine</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     AUTH OVERLAY
+═══════════════════════════════════════════════════════════ -->
+<div id="auth-overlay" class="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="logo-pulse"></span>
+      <span class="logo-text">EventSync</span>
+    </div>
+    <p class="auth-subtitle">Real-Time Event Synchronization Engine</p>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Login</button>
+      <button class="auth-tab" data-tab="register">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <form id="login-form" class="auth-form">
+      <div class="field-group">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="admin@events.io" required />
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" required />
+      </div>
+      <div class="auth-hint">Demo: <code>admin@events.io</code> / <code>Admin@123</code></div>
+      <button type="submit" class="btn btn-primary btn-full">
+        <span class="btn-text">Sign In</span>
+        <span class="btn-loader hidden">⟳</span>
+      </button>
+      <div id="login-error" class="auth-error hidden"></div>
+    </form>
+
+    <!-- Register Form -->
+    <form id="register-form" class="auth-form hidden">
+      <div class="field-group">
+        <label>Name</label>
+        <input type="text" id="reg-name" placeholder="Alice Smith" required />
+      </div>
+      <div class="field-group">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="alice@example.com" required />
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <input type="password" id="reg-password" placeholder="Min. 6 characters" required />
+      </div>
+      <div class="field-group">
+        <label>Role</label>
+        <select id="reg-role">
+          <option value="consumer">Consumer</option>
+          <option value="producer">Producer</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">
+        <span class="btn-text">Create Account</span>
+        <span class="btn-loader hidden">⟳</span>
+      </button>
+      <div id="reg-error" class="auth-error hidden"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     APP SHELL
+═══════════════════════════════════════════════════════════ -->
+<div id="app" class="app hidden">
+
+  <!-- ── Sidebar ─────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="logo-pulse"></span>
+      <span class="sidebar-title">EventSync</span>
+      <button class="sidebar-close" id="sidebar-close">✕</button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="dashboard">
+        <span class="nav-icon">⚡</span> Dashboard
+      </button>
+      <button class="nav-item" data-view="events">
+        <span class="nav-icon">📋</span> Events
+      </button>
+      <button class="nav-item" data-view="create">
+        <span class="nav-icon">➕</span> Create Event
+      </button>
+      <button class="nav-item" data-view="logs">
+        <span class="nav-icon">📜</span> Activity Log
+      </button>
+      <button class="nav-item" data-view="analytics">
+        <span class="nav-icon">📊</span> Analytics
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-chip" id="sidebar-user">
+        <span id="user-avatar">🙂</span>
+        <div>
+          <div id="user-name-side" class="user-name">—</div>
+          <div id="user-role-side" class="user-role">—</div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <button class="hamburger" id="hamburger">☰</button>
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-right">
+        <div class="ws-indicator" id="ws-indicator">
+          <span class="ws-dot"></span>
+          <span id="ws-label">Connecting…</span>
+        </div>
+        <button class="notif-btn" id="notif-btn">
+          🔔
+          <span class="notif-badge hidden" id="notif-badge">0</span>
+        </button>
+        <div class="topbar-user" id="topbar-user">—</div>
+      </div>
+    </header>
+
+    <!-- Notification Dropdown -->
+    <div class="notif-dropdown hidden" id="notif-dropdown">
+      <div class="notif-header">
+        <span>Notifications</span>
+        <button id="mark-all-read">Mark all read</button>
+      </div>
+      <div class="notif-list" id="notif-list">
+        <div class="notif-empty">No notifications yet</div>
+      </div>
+    </div>
+
+    <!-- Live Activity Banner -->
+    <div class="live-banner" id="live-banner">
+      <span class="live-dot"></span>
+      <span id="live-banner-text">Live feed active — waiting for events…</span>
+    </div>
+
+    <!-- ────────── VIEW: DASHBOARD ────────── -->
+    <section class="view active" id="view-dashboard">
+      <div class="stat-grid">
+        <div class="stat-card" id="stat-total">
+          <div class="stat-label">Total Events</div>
+          <div class="stat-val" id="s-total">—</div>
+          <div class="stat-sub">All time</div>
+        </div>
+        <div class="stat-card accent-green" id="stat-active">
+          <div class="stat-label">Active</div>
+          <div class="stat-val" id="s-active">—</div>
+          <div class="stat-sub">Running now</div>
+        </div>
+        <div class="stat-card accent-yellow" id="stat-pending">
+          <div class="stat-label">Pending</div>
+          <div class="stat-val" id="s-pending">—</div>
+          <div class="stat-sub">Queued</div>
+        </div>
+        <div class="stat-card accent-red" id="stat-critical">
+          <div class="stat-label">Critical</div>
+          <div class="stat-val" id="s-critical">—</div>
+          <div class="stat-sub">High priority</div>
+        </div>
+        <div class="stat-card accent-blue" id="stat-clients">
+          <div class="stat-label">Connected</div>
+          <div class="stat-val" id="s-clients">—</div>
+          <div class="stat-sub">Live clients</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Live Event Stream</h2>
+            <button class="btn btn-ghost btn-sm" id="clear-stream">Clear</button>
+          </div>
+          <div class="event-stream" id="event-stream">
+            <div class="stream-empty">Waiting for events…</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>Recent Events</h2></div>
+          <div class="event-list-mini" id="recent-events">
+            <div class="loading-row">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────── VIEW: EVENTS ────────── -->
+    <section class="view hidden" id="view-events">
+      <div class="view-toolbar">
+        <input class="search-input" type="text" id="event-search" placeholder="🔍  Search events…" />
+        <select id="filter-status" class="filter-select">
+          <option value="">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select id="filter-priority" class="filter-select">
+          <option value="">All Priority</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="refresh-events">↺ Refresh</button>
+      </div>
+
+      <div class="events-table-wrap">
+        <table class="events-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Event Name</th><th>Category</th>
+              <th>Priority</th><th>Status</th><th>Created By</th>
+              <th>Timestamp</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody">
+            <tr><td colspan="8" class="loading-row">Loading events…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ────────── VIEW: CREATE EVENT ────────── -->
+    <section class="view hidden" id="view-create">
+      <div class="form-card">
+        <h2 class="form-title">
+          <span id="form-mode-label">Produce New Event</span>
+        </h2>
+        <form id="event-form">
+          <input type="hidden" id="edit-event-id" />
+          <div class="form-grid">
+            <div class="field-group">
+              <label>Event Name <span class="req">*</span></label>
+              <input type="text" id="f-name" placeholder="e.g. Payment Gateway Timeout" required />
+            </div>
+            <div class="field-group">
+              <label>Category</label>
+              <input type="text" id="f-category" placeholder="e.g. network, security, database" />
+            </div>
+            <div class="field-group">
+              <label>Priority</label>
+              <select id="f-priority">
+                <option value="low">🟢 Low</option>
+                <option value="medium" selected>🟡 Medium</option>
+                <option value="high">🟠 High</option>
+                <option value="critical">🔴 Critical</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>Status</label>
+              <select id="f-status">
+                <option value="pending" selected>Pending</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+            <div class="field-group full">
+              <label>Description</label>
+              <textarea id="f-description" rows="3" placeholder="Describe what this event represents…"></textarea>
+            </div>
+            <div class="field-group full">
+              <label>Payload (JSON) <span class="optional">optional</span></label>
+              <textarea id="f-payload" rows="4" placeholder='{ "key": "value" }'></textarea>
+              <span class="field-hint">Must be valid JSON or left empty</span>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="form-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="form-submit">
+              <span id="form-submit-label">⚡ Broadcast Event</span>
+            </button>
+          </div>
+          <div id="form-error" class="auth-error hidden"></div>
+          <div id="form-success" class="form-success hidden"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ────────── VIEW: LOGS ────────── -->
+    <section class="view hidden" id="view-logs">
+      <div class="view-toolbar">
+        <select id="log-filter-action" class="filter-select">
+          <option value="">All Actions</option>
+          <option value="created">Created</option>
+          <option value="updated">Updated</option>
+          <option value="deleted">Deleted</option>
+          <option value="broadcast">Broadcast</option>
+          <option value="consumed">Consumed</option>
+          <option value="failed">Failed</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="refresh-logs">↺ Refresh</button>
+      </div>
+      <div class="log-stream" id="log-stream">
+        <div class="loading-row">Loading activity log…</div>
+      </div>
+    </section>
+
+    <!-- ────────── VIEW: ANALYTICS ────────── -->
+    <section class="view hidden" id="view-analytics">
+      <div class="analytics-grid">
+        <div class="panel">
+          <div class="panel-header"><h2>Events by Status</h2></div>
+          <div class="chart-wrap" id="chart-status"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2>Events by Category</h2></div>
+          <div class="chart-wrap" id="chart-category"></div>
+        </div>
+        <div class="panel span-2">
+          <div class="panel-header"><h2>Activity — Last 7 Days</h2></div>
+          <div class="chart-wrap" id="chart-activity"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Edit Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Event Details</h3>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ── Toast Container ────────────────────────────────────── -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="js/api.js"></script>
+<script src="js/socket.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
